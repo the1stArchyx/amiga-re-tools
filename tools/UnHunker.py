@@ -28,6 +28,13 @@ hunk_names = {0x3e7: "HUNK_UNIT",
               0x3fd: "HUNK_RELRELOC32",
               0x3fe: "HUNK_ABSRELOC16"}
 
+# list of hunks, contains a list for each hunk:
+# 0 - int  - memory type, chip/fast/any
+# 1 - int  - pointer % 4 == 0 - below 1M for chip, between 1M to 10M for any, between 2M to 10M for fast
+# 2 - int  - size in bytes % 4 == 0
+# 3 - list - reloc tables - (target_hunk, (offsets))
+hunks = []
+
 
 parser = argparse.ArgumentParser(prog="UnHunker",
                                  description="A tool to decode a 'Hunk' executable into a statically addressed memory dump file")
@@ -64,7 +71,6 @@ if firstHunk in hunk_names:
             print("Error: Hunk table size mismatch!")
             exit(1)
 
-        hunkSizes = []
         for i in range(tableSize):
             hunkSize = struct.unpack(">I", fileBytes[pointer:pointer + 4])[0]
             pointer += 4
@@ -83,49 +89,47 @@ if firstHunk in hunk_names:
                     memFlags = "fast memory"
                 case 3:
                     memFlags = f"memory specified by additional flags: {addMemFlags:x}"
-            hunkSizes.append((hunkSize, memFlags))
+            hunks.append([memFlags, 0, hunkSize, []])
 
-        endOfHeader = pointer
-
-        print("\nHunk size table:")
-        for (i, j) in hunkSizes:
-            print(f"{i:8x} ({i:10d}) – Loads to {j}.")
-
-        print("\nHunks as discovered:")
-        hunks = []
-        hunkCount = tableSize
-        while hunkCount:
+        hunkIndex = 0
+        while hunkIndex < tableSize:
             hunkID = struct.unpack(">I", fileBytes[pointer:pointer + 4])[0]
             match hunkID:
-                case 0x3e9:
+                case 0x3e9: # HUNK_CODE
                     hunkLen = struct.unpack(">I", fileBytes[pointer + 4:pointer + 8])[0] * 4
                     pointer += 8
-                    hunkPointer = pointer
-                    hunks.append((hunkID, hunkPointer, hunkLen))
-                    print(f"Found {hunk_names[hunkID]} – length {hunkLen:d} bytes. Code starts at {hunkPointer:x}.")
+                    hunks[hunkIndex][1] = pointer
+                    if not hunks[hunkIndex][2] == hunkLen:
+                        print(f"Error: Hunk length mismatch!\n| Hunk . . . . . . : {hunkIndex}\n| Length in header : {hunks[hunkIndex][2]:d} bytes\n| Length in hunk . : {hunkLen})")
+                        exit(1)
                     pointer += hunkLen
-                case 0x3ec:
-                    print(f"Found {hunk_names[hunkID]}.")
+                case 0x3ec: # HUNK_RELOC32
                     pointer += 4
-                    hunkPointer = pointer
                     while True:
                         offsetCount = struct.unpack(">I", fileBytes[pointer:pointer + 4])[0]
                         if not offsetCount:
                             break
-                        relocTable = [struct.unpack(">I", fileBytes[pointer + 4:pointer + 8])[0]]
+                        relocTarget = struct.unpack(">I", fileBytes[pointer + 4:pointer + 8])[0]
                         pointer += 8
+                        relocTable = []
                         for i in range(offsetCount):
                             relocTable.append(struct.unpack(">I", fileBytes[pointer:pointer + 4])[0])
                             pointer += 4
-                        print(f"– Target hunk: {relocTable[0]} – offsets to relocate: {relocTable[1:]}")
+                        hunks[hunkIndex][3].append((relocTarget, tuple(relocTable)))
                     pointer += 4
-                case 0x3f2:
+                case 0x3f2: # HUNK_END
                     pointer += 4
-                    print(f"Found {hunk_names[hunkID]}.")
-                    hunkCount -= 1
+                    hunkIndex += 1
                 case _:
-                    print(f"{hunkID:x}")
-                    break
+                    print(f"This tool cannot process files with {hunk_names[hunkID]} ({hunkID:x}).")
+                    exit(1)
+    print("Hunk headers processed.")
 
+    for hunk in hunks:
+        print(f"Memory type is {hunk[0]}, pointer to data is {hunk[1]}, data size is {hunk[2]} bytes.")
+        if len(hunk[3]):
+            print("Reloc tables:")
+            for table in hunk[3]:
+                print(f"  Target hunk: {table[0]} - offsets: {table[1]}")
 else:
     print(f"Unknown hunk {firstHunk:x}.")
