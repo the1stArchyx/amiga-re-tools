@@ -4,15 +4,30 @@ This repository will contain tools I'll be writing to convert certain
 loadable file formats into the form that they would be loaded into the
 memory of the computer by the operating system itself.
 
-The first project to work on will be an ~UnHunker~ to convert "Hunk"
-format executables the way the AmigaOS would do. This will allow
-creating a statically addressed memory dump segment to be loaded into
-Ghidra or another reverse engineering tool for further processing.
-(I'm aware that this could be made as a plugin for Ghidra, but
-maintaining it would be too much of a chore for me.)
+
+** UnUhunker
+
+The first functional tool is ~UnHunker~ to convert "Hunk" format
+executables the way the AmigaOS would do. This allows creating a
+statically addressed memory dump segment to be loaded into Ghidra or
+another reverse engineering tool for further processing.
+
+Currently it handles HUNK_CODE and HUNK_RELOC32 hunks to produce a
+statically addressed monolith. Any hunks to be loaded to chip RAM will
+be addressed below 0x100000, other hunks starting from that same 1 MB
+boundary. The base address to load the dump is appended to the file
+name while the entry point should in most cases stay at 0x100000.
+
+I'm aware that this could be made as a plugin for Ghidra, but
+maintaining it to keep it up-to-date with Ghidra would be too much of
+a chore for me.
+
+
+** Future
 
 Another project could be an ADF tool to work on Amiga Disk File
 images. Initially the target will be to be compatible with disk images
 that have a partial OFS file system with custom blocks of data. This
-has been seen done on some games that start through the operating
-system but subsequently load the game data with a custom trackloader.
+has been seen on some floppies of games that start through the
+operating system but subsequently load the game data with a custom
+trackloader.

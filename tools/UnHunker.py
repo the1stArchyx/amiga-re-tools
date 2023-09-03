@@ -29,10 +29,12 @@ hunk_names = {0x3e7: "HUNK_UNIT",
               0x3fe: "HUNK_ABSRELOC16"}
 
 # list of hunks, contains a list for each hunk:
-# 0 - int  - memory type, chip/fast/any
-# 1 - int  - pointer % 4 == 0 - below 1M for chip, between 1M to 10M for any, between 2M to 10M for fast
-# 2 - int  - size in bytes % 4 == 0
-# 3 - list - reloc tables - (target_hunk, (offsets))
+# 0 - int   - memory type, 0=any/1=chip/2=fast
+# 1 - int   - pointer % 4 == 0 - pointer to data
+# 2 - int   - size in bytes % 4 == 0
+# 3 - list  - reloc tables - (target_hunk, (offsets))
+# 4 - int   - target address - below 1M for chip, between 1M to 10M for any/fast
+# 5 - bytes - relocated data
 hunks = []
 
 
@@ -81,15 +83,10 @@ if firstHunk in hunk_names:
                 addMemFlags = struct.unpack(">I", fileBytes[pointer:pointer + 4])[0]
                 pointer += 4
             match memFlags:
-                case 0:
-                    memFlags = "any memory"
-                case 1:
-                    memFlags = "chip memory"
-                case 2:
-                    memFlags = "fast memory"
                 case 3:
-                    memFlags = f"memory specified by additional flags: {addMemFlags:x}"
-            hunks.append([memFlags, 0, hunkSize, []])
+                    print(f"Error: This tool cannot process hunks with additional memory allocation flags. ({addMemFlags:x})")
+                    exit(1)
+            hunks.append([memFlags, 0, hunkSize, [], 0, b""])
 
         hunkIndex = 0
         while hunkIndex < tableSize:
@@ -125,11 +122,69 @@ if firstHunk in hunk_names:
                     exit(1)
     print("Hunk headers processed.")
 
+    # map hunks into memory
+    chip_pointer = 0x100000
+    fast_pointer = 0x100000
+    for i in range(len(hunks)):
+        match hunks[i][0]:
+            case 0 | 2:
+                hunks[i][4] = fast_pointer
+                fast_pointer += hunks[i][2]
+                if fast_pointer > 0xA00000:
+                    print("Error: hunks to be allocated above chip memory do not fit.")
+                    exit(1)
+            case 1:
+                chip_pointer -= hunks[i][2]
+                if chip_pointer < 0:
+                    print("Error: hunks to be allocated into chip memory do not fit.")
+                    exit(1)
+                hunks[i][4] = chip_pointer
+
+    entry_point = hunks[0][4]
+    # apply reloc tables
+    for i in range(len(hunks)):
+        pointer = hunks[i][1]
+        dataEnd = pointer + hunks[i][2]
+        if len(hunks[i][3]):
+            relocs = []  # list of tuples, (offset, reloc)
+            for table in hunks[i][3]:
+                targetAddr = hunks[table[0]][4]
+                for offset in table[1]:
+                    relocs.append((offset, targetAddr))
+            relocs = sorted(relocs, key=lambda offs: offs[0])
+
+        while len(relocs):
+            (o, r) = relocs.pop(0)
+            o += hunks[i][1]
+            if o < pointer:
+                print("Reloc table offset error.")
+            hunks[i][5] += fileBytes[pointer:o]
+            raw = struct.unpack(">I", fileBytes[o:o + 4])[0]
+            hunks[i][5] += struct.pack(">I", raw + r)
+            print(f"Relocated {raw:x} @ {o:x} to {(raw + r):x}")
+            pointer = o + 4
+        hunks[i][5] += fileBytes[pointer:dataEnd]
+
     for hunk in hunks:
-        print(f"Memory type is {hunk[0]}, pointer to data is {hunk[1]}, data size is {hunk[2]} bytes.")
-        if len(hunk[3]):
-            print("Reloc tables:")
-            for table in hunk[3]:
-                print(f"  Target hunk: {table[0]} - offsets: {table[1]}")
+        print(f"Actual data length {len(hunk[5])} vs. specified data length {hunk[2]}")
+
+    hunks = sorted(hunks, key=lambda target: target[4])
+    outBytes = b""
+    for hunk in hunks:
+        pointer = chip_pointer + len(outBytes)
+        startpointer = hunk[4]
+        if startpointer < pointer:
+            print(f"Error: Data pointer collision - pointer = {pointer}; startpointer = {startpointer}")
+            exit(1)
+        if startpointer > pointer:
+            outBytes += bytes(startpointer - pointer)
+        outBytes += hunk[5]
+
+    print(f"Output buffer length: {len(outBytes)}")
+
+    with open(f"{args.filename}-0x{chip_pointer:x}.memdump", "wb") as outFile:
+        outFile.write(outBytes)
+
+    print(f"Load memory dump file to 0x{chip_pointer:x}. Entry point is at 0x{entry_point:x}")
 else:
     print(f"Unknown hunk {firstHunk:x}.")
