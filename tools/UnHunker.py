@@ -100,6 +100,9 @@ if firstHunk in hunk_names:
                         print(f"Error: Hunk length mismatch!\n| Hunk . . . . . . : {hunkIndex}\n| Length in header : {hunks[hunkIndex][2]:d} bytes\n| Length in hunk . : {hunkLen})")
                         exit(1)
                     pointer += hunkLen
+                case 0x3eb: # HUNK_BSS
+                    print(f"Found HUNK_BSS at {pointer:x}. Skipping.")
+                    pointer += 8
                 case 0x3ec: # HUNK_RELOC32
                     pointer += 4
                     while True:
