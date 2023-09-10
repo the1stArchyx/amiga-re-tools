@@ -18,16 +18,24 @@ be addressed below 0x100000, other hunks starting from that same 1 MB
 boundary. The base address to load the dump is appended to the file
 name while the entry point should in most cases stay at 0x100000.
 
+This tool is extended as files with currently "unknown" hunks are
+acquired for reverse engineering.
+
 I'm aware that this could be made as a plugin for Ghidra, but
 maintaining it to keep it up-to-date with Ghidra would be too much of
 a chore for me.
 
 
-** Future
+** ADF-tool
 
-Another project could be an ADF tool to work on Amiga Disk File
-images. Initially the target will be to be compatible with disk images
-that have a partial OFS file system with custom blocks of data. This
-has been seen on some floppies of games that start through the
-operating system but subsequently load the game data with a custom
-trackloader.
+This tool will be initially created to extract files and raw blocks
+out of /Amiga Disk File/ images. Initially the target will be to be
+compatible with disk images that have a partial OFS file system with
+custom blocks of data. This has been seen on some floppies of games
+that start through the operating system but subsequently load the game
+data with a custom trackloader.
+
+The current status of this tool is slow development. Once the reading
+part is done, it may be expanded to writing these disk files as well,
+most likely with the added benefit of not corrupting any custom
+blocks.
